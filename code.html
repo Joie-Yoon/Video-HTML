@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MP4 + Chat Sync</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif; background:#f6f6f6; }
+
+    .layout{
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: flex;
+      gap: 16px;
+      align-items: stretch;
+    }
+    .panel{
+      background: #fff;
+      border: 1px solid #e6e6e6;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .videoPanel{
+      flex: 2 1 680px;
+      min-width: 320px;
+      background:#000;
+      border-color:#000;
+      padding: 0;
+    }
+    .chatPanel{
+      flex: 1 1 360px;
+      min-width: 280px;
+      display:flex;
+      flex-direction: column;
+    }
+
+    /* ✅ 비율 유지: video에 aspect-ratio */
+    .videoWrap{
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      position: relative;
+      background:#000;
+    }
+    video{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      object-fit: contain; /* cover로 바꾸면 꽉 참(일부 잘림) */
+    }
+
+    .chatHeader{
+      padding: 12px 14px;
+      border-bottom: 1px solid #e6e6e6;
+      display:flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .title{ font-weight: 800; }
+    .sub{ font-size: 12px; color:#6b7280; }
+
+    .chatList{
+      padding: 10px;
+      overflow:auto;
+      height: 520px;
+    }
+
+    .msg{
+      display:grid;
+      grid-template-columns: 72px 1fr;
+      gap:10px;
+      padding:8px;
+      border-radius:12px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .msg:hover{ background:#f3f4f6; }
+    .time{ color:#6b7280; font-size:12px; font-variant-numeric: tabular-nums; padding-top:2px; }
+    .bubble{ background:#f9fafb; border:1px solid #eef0f3; border-radius:12px; padding: 8px 10px; }
+    .name{ font-weight:700; font-size:13px; margin-bottom:4px; }
+    .text{ font-size:14px; line-height:1.35; white-space:pre-wrap; word-break:break-word; }
+
+    .msg.active{
+      background:#eef2ff;
+      outline: 2px solid #c7d2fe;
+    }
+    .msg.active .bubble{
+      background:#fff;
+      border-color:#c7d2fe;
+    }
+
+    @media (max-width: 900px){
+      .layout{ flex-direction: column; }
+      .chatList{ height: 360px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="layout">
+    <!-- VIDEO -->
+    <div class="panel videoPanel">
+      <div class="videoWrap">
+        <!-- ✅ mp4 파일 경로만 바꿔주면 됨 -->
+        <video id="video" controls preload="metadata">
+          <source src="./your-video.mp4" type="video/mp4" />
+          브라우저가 video 태그를 지원하지 않아.
+        </video>
+      </div>
+    </div>
+
+    <!-- CHAT -->
+    <div class="panel chatPanel">
+      <div class="chatHeader">
+        <div class="title">채팅</div>
+        <div class="sub" id="status">sync on</div>
+      </div>
+
+      <div class="chatList" id="chat">
+        <div class="msg" data-ts="00:02:13">
+          <div class="time">00:02:13</div>
+          <div class="bubble">
+            <div class="name">Momin Song</div>
+            <div class="text">🤩</div>
+          </div>
+        </div>
+
+        <div class="msg" data-ts="00:06:14">
+          <div class="time">00:06:14</div>
+          <div class="bubble">
+            <div class="name">Sunjoo Baik</div>
+            <div class="text">넘웃겨요,,,,,ㅋㅋㅋㅋ큐</div>
+          </div>
+        </div>
+
+        <div class="msg" data-ts="00:06:25">
+          <div class="time">00:06:25</div>
+          <div class="bubble">
+            <div class="name">김주연</div>
+            <div class="text">ㅠㅠ</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById("video");
+    const chatList = document.getElementById("chat");
+    const rows = Array.from(chatList.querySelectorAll(".msg"));
+    const statusEl = document.getElementById("status");
+
+    function tsToSeconds(ts){
+      const parts = String(ts).trim().split(":").map(Number);
+      if (parts.length === 3){
+        const [h,m,s] = parts; return h*3600 + m*60 + s;
+      }
+      if (parts.length === 2){
+        const [m,s] = parts; return m*60 + s;
+      }
+      return 0;
+    }
+
+    rows.forEach(r => r.dataset.sec = String(tsToSeconds(r.dataset.ts)));
+
+    // ✅ (1) 채팅 클릭 → 해당 시간으로 점프
+    chatList.addEventListener("click", (e) => {
+      const row = e.target.closest(".msg");
+      if (!row) return;
+      const t = Number(row.dataset.sec || "0");
+
+      statusEl.textContent = "seeking…";
+      video.currentTime = t;
+      // 자동 재생 원하면:
+      video.play().catch(()=>{});
+      statusEl.textContent = "sync on";
+    });
+
+    // ✅ (2) 재생 중 → 해당 시간대 채팅 하이라이트/스크롤
+    const windowSec = 2.0;
+    let active = null;
+    let lastScrollAt = 0;
+
+    function setActive(row){
+      if (active === row) return;
+      if (active) active.classList.remove("active");
+      active = row;
+      if (active) active.classList.add("active");
+    }
+
+    function scrollRowIntoView(row){
+      const now = performance.now();
+      if (now - lastScrollAt < 350) return;
+      lastScrollAt = now;
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function findNearestRow(t){
+      let best = null;
+      let bestDiff = Infinity;
+      for (const r of rows){
+        const sec = Number(r.dataset.sec);
+        const diff = Math.abs(sec - t);
+        if (diff < bestDiff){
+          bestDiff = diff;
+          best = r;
+        }
+      }
+      if (best && bestDiff <= windowSec) return best;
+      return null;
+    }
+
+    let prev = null;
+    video.addEventListener("timeupdate", () => {
+      const t = video.currentTime;
+      const nearest = findNearestRow(t);
+
+      if (nearest !== prev){
+        setActive(nearest);
+        if (nearest) scrollRowIntoView(nearest);
+        prev = nearest;
+      }
+    });
+  </script>
+</body>
+</html>
